@@ -1,0 +1,84 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: ma_core
+          POSTGRES_USER: ma_core
+          POSTGRES_PASSWORD: ma_core_password
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U ma_core -d ma_core"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6380:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm verify:static
+      - run: pnpm --filter @ma-core/api migrate
+        env: &test_env
+          NODE_ENV: test
+          POSTGRES_URL: postgres://ma_core:ma_core_password@localhost:5433/ma_core
+          REDIS_URL: redis://localhost:6380
+          VAULT_MASTER_KEY_BASE64: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          VAULT_KEY_PROVIDER: env
+          VAULT_KEY_VERSION: ci-v1
+          JWT_AUTH_SECRET_BASE64: MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=
+          ACCESS_TOKEN_TTL_SECONDS: 900
+          REFRESH_TOKEN_TTL_SECONDS: 1209600
+          AUTH_REGISTRATION_MODE: open
+          WEB_ORIGIN: http://127.0.0.1:3000
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:4100
+          EMBEDDING_PROVIDER: deterministic
+          EMBEDDING_DIMENSIONS: 64
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm lint
+      - run: pnpm build
+        env:
+          NEXT_PUBLIC_API_URL: http://127.0.0.1:4100
+      - run: pnpm e2e
+        env:
+          <<: *test_env
+          E2E_WEB_URL: http://127.0.0.1:3000
+          E2E_API_URL: http://127.0.0.1:4100
+      - run: docker build -f apps/api/Dockerfile .
+      - run: docker build -f apps/web/Dockerfile --build-arg NEXT_PUBLIC_API_URL=http://localhost:4100 .
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-qa-screenshots
+          path: apps/web/test-results/visual-qa
