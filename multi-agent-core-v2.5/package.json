@@ -1,0 +1,32 @@
+{
+  "name": "multi-agent-core",
+  "private": true,
+  "version": "2.5.0",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev:api": "pnpm --filter @ma-core/api dev",
+    "dev:web": "pnpm --filter @ma-core/web dev",
+    "build": "pnpm --filter @ma-core/shared build && pnpm --filter @ma-core/api build && cd apps/web && NEXT_TELEMETRY_DISABLED=1 pnpm exec next build",
+    "lint": "pnpm --filter @ma-core/shared build && pnpm --filter @ma-core/api lint && pnpm --filter @ma-core/web lint",
+    "typecheck": "pnpm --filter @ma-core/shared build && pnpm --filter @ma-core/api typecheck && pnpm --filter @ma-core/web typecheck",
+    "migrate": "pnpm --filter @ma-core/api migrate",
+    "test": "pnpm --filter @ma-core/api test",
+    "ci": "pnpm install --frozen-lockfile && pnpm migrate && pnpm typecheck && pnpm test && pnpm lint && pnpm build",
+    "verify:static": "node scripts/static-audit.mjs && node scripts/part2-safety-audit.mjs && node scripts/github-pages-audit.mjs",
+    "e2e": "pnpm build && playwright test -c apps/web/playwright.config.ts",
+    "e2e:headed": "pnpm build && playwright test -c apps/web/playwright.config.ts --headed",
+    "visual:qa": "pnpm build && playwright test -c apps/web/playwright.config.ts --grep @visual",
+    "verify:full": "pnpm install --frozen-lockfile && pnpm verify:static && pnpm typecheck && pnpm test && pnpm lint && pnpm build && pnpm e2e",
+    "build:web": "cd apps/web && NEXT_TELEMETRY_DISABLED=1 NEXT_PRIVATE_BUILD_WORKER=1 pnpm exec next build",
+    "e2e:mock": "pnpm build:web && E2E_MOCK_API=true pnpm exec playwright test -c apps/web/playwright.config.ts --project=chromium",
+    "visual:qa:mock": "pnpm build:web && E2E_MOCK_API=true pnpm exec playwright test -c apps/web/playwright.config.ts --project=chromium --grep @visual",
+    "verify:part2": "node scripts/part2-safety-audit.mjs",
+    "build:github-pages": "pnpm --filter @ma-core/shared build && cd apps/web && NEXT_PUBLIC_DEPLOY_TARGET=github-pages NEXT_PUBLIC_DEMO_MODE=true NEXT_TELEMETRY_DISABLED=1 NEXT_PRIVATE_BUILD_WORKER=1 pnpm exec next build && touch out/.nojekyll",
+    "verify:github-pages": "pnpm verify:static && pnpm build:github-pages",
+    "verify:github-pages:static": "node scripts/github-pages-audit.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.1",
+    "typescript": "^5.7.3"
+  }
+}

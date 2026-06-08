@@ -1,0 +1,76 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ma-core-postgres
+    environment:
+      POSTGRES_DB: ma_core
+      POSTGRES_USER: ma_core
+      POSTGRES_PASSWORD: ma_core_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ma_core -d ma_core"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    container_name: ma-core-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      POSTGRES_URL: postgres://ma_core:ma_core_password@postgres:5432/ma_core
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: http://localhost:3000
+    command: ["pnpm", "--filter", "@ma-core/api", "migrate"]
+    restart: "no"
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      POSTGRES_URL: postgres://ma_core:ma_core_password@postgres:5432/ma_core
+      REDIS_URL: redis://redis:6379
+      WEB_ORIGIN: http://localhost:3000
+    ports:
+      - "4100:4100"
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4100
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4100
+    ports:
+      - "3000:3000"
+volumes:
+  postgres_data:
+  redis_data:

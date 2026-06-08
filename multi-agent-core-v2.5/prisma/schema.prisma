@@ -1,0 +1,155 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("POSTGRES_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model UserExchangeAccount {
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @db.Uuid
+  encryptedApiKey  String             @map("encrypted_api_key")
+  encryptedSecret  String             @map("encrypted_secret")
+  exchangeName     String             @map("exchange_name")
+  isActive         Boolean            @default(true) @map("is_active")
+  executionEnabled Boolean            @default(false) @map("execution_enabled")
+  executionMode    String             @default("PAPER") @map("execution_mode")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+  positions        Position[]
+  dailyStats       DailyTradingStat[]
+  riskPolicies     RiskPolicy[]
+
+  @@map("user_exchange_accounts")
+}
+
+model Position {
+  id                    String              @id @default(uuid()) @db.Uuid
+  accountId             String              @map("account_id") @db.Uuid
+  userId                String              @map("user_id") @db.Uuid
+  account               UserExchangeAccount @relation(fields: [accountId], references: [id])
+  exchangePositionId    String              @map("exchange_position_id")
+  pair                  String
+  direction             String
+  leverage              Int
+  volume                Float
+  entryPrice            Float               @map("entry_price")
+  stopLossPrice         Float               @map("stop_loss_price")
+  takeProfitPrice       Float               @map("take_profit_price")
+  status                String
+  openedAt              DateTime            @default(now()) @map("opened_at")
+  closedAt              DateTime?           @map("closed_at")
+  closeRequestedAt      DateTime?           @map("close_requested_at")
+  closeConfirmedAt      DateTime?           @map("close_confirmed_at")
+  warningSentAt         DateTime?           @map("warning_sent_at")
+  forceCloseRequestedAt DateTime?           @map("force_close_requested_at")
+  forceCloseConfirmedAt DateTime?           @map("force_close_confirmed_at")
+  realizedPnL           Float?              @map("realized_pnl")
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+  events                PositionEvent[]
+
+  @@unique([accountId, exchangePositionId])
+  @@map("active_positions")
+}
+
+model DailyTradingStat {
+  id                    String              @id @default(uuid()) @db.Uuid
+  accountId             String              @map("account_id") @db.Uuid
+  account               UserExchangeAccount @relation(fields: [accountId], references: [id])
+  tradingDate           DateTime            @map("trading_date") @db.Date
+  equityAtStart         Float               @map("equity_at_start")
+  highestEquity         Float               @map("highest_equity")
+  lowestEquity          Float               @map("lowest_equity")
+  currentEquity         Float               @map("current_equity")
+  currentRealizedPnL    Float               @default(0.0) @map("current_realized_pnl")
+  currentUnrealizedPnL  Float               @default(0.0) @map("current_unrealized_pnl")
+  isLockedByRisk        Boolean             @default(false) @map("is_locked_by_risk")
+  isLockedByProfit      Boolean             @default(false) @map("is_locked_by_profit")
+  riskLockUntil         DateTime?           @map("risk_lock_until")
+  profitLockUntil       DateTime?           @map("profit_lock_until")
+  systemHealth          String              @default("NORMAL") @map("system_health")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  @@unique([accountId, tradingDate])
+  @@map("daily_trading_stats")
+}
+
+model TradingLock {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  accountId  String?   @map("account_id") @db.Uuid
+  lockType   String    @map("lock_type")
+  reason     String
+  active     Boolean   @default(true)
+  lockUntil  DateTime  @map("lock_until")
+  metadata   Json      @default("{}")
+  releasedAt DateTime? @map("released_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@map("trading_locks")
+}
+
+model SymbolTradingRule {
+  id                  String   @id @default(uuid()) @db.Uuid
+  exchange            String
+  pair                String
+  symbol              String
+  minQty              Float    @map("min_qty")
+  maxQty              Float    @map("max_qty")
+  qtyStep             Float    @map("qty_step")
+  tickSize            Float    @map("tick_size")
+  minNotional         Float    @map("min_notional")
+  maxNotional         Float?   @map("max_notional")
+  maxLeverage         Int      @map("max_leverage")
+  contractSize        Float    @default(1) @map("contract_size")
+  marginAsset         String   @default("USDT") @map("margin_asset")
+  status              String   @default("TRADING")
+  reduceOnlySupported Boolean  @default(true) @map("reduce_only_supported")
+  rawPayload          Json     @default("{}") @map("raw_payload")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@unique([exchange, pair])
+  @@map("symbol_trading_rules")
+}
+
+model RiskPolicy {
+  id                         String              @id @default(uuid()) @db.Uuid
+  userId                     String              @map("user_id") @db.Uuid
+  accountId                  String              @map("account_id") @db.Uuid
+  account                    UserExchangeAccount @relation(fields: [accountId], references: [id])
+  maxDailyDrawdownRatio      Float               @default(0.05) @map("max_daily_drawdown_ratio")
+  dailyProfitCapRatio        Float               @default(0.15) @map("daily_profit_cap_ratio")
+  riskPerTradeFraction       Float               @default(0.01) @map("risk_per_trade_fraction")
+  maxOpenPositions           Int                 @default(3) @map("max_open_positions")
+  maxDailyTrades             Int                 @default(20) @map("max_daily_trades")
+  maxSymbolExposureRatio     Float               @default(0.25) @map("max_symbol_exposure_ratio")
+  maxAccountExposureRatio    Float               @default(0.75) @map("max_account_exposure_ratio")
+  maxSpreadBps               Float               @default(25) @map("max_spread_bps")
+  maxOrderbookAgeMs          Int                 @default(3000) @map("max_orderbook_age_ms")
+  requirePrivateStreamForLive Boolean            @default(true) @map("require_private_stream_for_live")
+  requireSymbolRulesForLive  Boolean             @default(true) @map("require_symbol_rules_for_live")
+  createdAt                  DateTime            @default(now()) @map("created_at")
+  updatedAt                  DateTime            @updatedAt @map("updated_at")
+
+  @@unique([userId, accountId])
+  @@map("risk_policies")
+}
+
+model PositionEvent {
+  id          String   @id @default(uuid()) @db.Uuid
+  positionId  String   @map("position_id") @db.Uuid
+  position    Position @relation(fields: [positionId], references: [id])
+  userId      String   @map("user_id") @db.Uuid
+  accountId   String   @map("account_id") @db.Uuid
+  eventType   String   @map("event_type")
+  eventStatus String   @map("event_status")
+  message     String
+  metadata    Json     @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("position_events")
+}
